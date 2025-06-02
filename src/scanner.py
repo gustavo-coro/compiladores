@@ -1,5 +1,4 @@
 import re
-import sys
 
 REGEX_LIST = [
     ('COMENTARIO',      r'//.*|/\*[\s\S]*?\*/'),
@@ -65,31 +64,3 @@ class Scanner:
                 self.id += 1
 
         return self.tokens, self.errors
-    
-if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print("Erro no número de argumentos.")
-        print("Especifique o caminho do arquivo")
-        exit()
-
-    file_name = sys.argv[1]
-
-    try:
-        with open(file_name, "r") as file:
-            input = file.read()
-    except FileNotFoundError:
-        print("Arquivo não encontrado.")
-        exit()
-
-    scanner = Scanner(input, token_re)
-
-    tokens, errors = scanner.run()
-
-    print("Tokens:")
-    for token in tokens:
-        print(f"ID: {token['id']}, TIPO: {token['tipo']}, VALOR: {token['valor']}, LINHA: {token['linha']}, COLUNA: {token['coluna']}")
-
-    print("\Erros:")
-    if errors:
-        for err in errors:
-            print(f"[Linha {err['linha']}:{err['coluna']}] {err['mensagem']}")
