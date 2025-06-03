@@ -1,6 +1,6 @@
 from src.scanner import Scanner
 from src.scanner import token_re
-from src.parser import CParser
+from src.parser import Parser
 import sys
 
 if __name__ == "__main__":
@@ -28,9 +28,10 @@ if __name__ == "__main__":
         print("Lexical errors found:")
         for error in lex_errors:
             print(error)
+        sys.exit()
     
     # Run parser
-    parser = CParser(tokens)
+    parser = Parser(tokens)
     ast, errors = parser.parse()
     
     print("Abstract Syntax Tree:")

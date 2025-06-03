@@ -1,289 +1,565 @@
-from collections import deque
-
-class ASTNode:
-    def __init__(self, node_type, value=None, children=None):
-        self.node_type = node_type
+class Node:
+    def __init__(self, type_, children=None, value=None):
+        self.type = type_
+        self.children = children if children is not None else []
         self.value = value
-        self.children = children or []
-        
+
     def __repr__(self, level=0):
-        ret = "  " * level + f"{self.node_type}"
-        if self.value is not None:
-            ret += f": {self.value}"
-        ret += "\n"
+        ret = "\t" * level + f"{self.type}: {self.value if self.value else ''}\n"
         for child in self.children:
             ret += child.__repr__(level + 1)
         return ret
 
-class ParserError:
-    def __init__(self, message, line, column):
-        self.message = message
-        self.line = line
-        self.column = column
-        
-    def __str__(self):
-        return f"Error at line {self.line}, column {self.column}: {self.message}"
 
-class CParser:
-    def __init__(self, token_list):
-        self.tokens = deque(token_list)
-        self.current_token = None
+class Parser:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.position = 0
         self.errors = []
-        self.advance()
-        
+
+    def current_token(self):
+        if self.position < len(self.tokens):
+            return self.tokens[self.position]
+        return None
+
     def advance(self):
-        try:
-            self.current_token = self.tokens.popleft()
-        except IndexError:
-            self.current_token = None
-            
-    def expect(self, token_type, value=None, error_message=None):
-        if self.current_token is None:
-            msg = error_message or f"Expected {token_type} but found end of input"
-            self.errors.append(ParserError(msg, -1, -1))
-            return False
-            
-        if self.current_token['tipo'] != token_type:
-            msg = error_message or f"Expected {token_type} but found {self.current_token['tipo']}"
-            self.errors.append(ParserError(msg, self.current_token['linha'], self.current_token['coluna']))
-            return False
-            
-        if value is not None and self.current_token['valor'] != value:
-            msg = error_message or f"Expected {value} but found {self.current_token['valor']}"
-            self.errors.append(ParserError(msg, self.current_token['linha'], self.current_token['coluna']))
-            return False
-            
-        self.advance()
-        return True
-        
-    def log_error(self, message):
-        if self.current_token:
-            self.errors.append(ParserError(message, self.current_token['linha'], self.current_token['coluna']))
+        self.position += 1
+
+    def expect(self, tipo, valor=None):
+        token = self.current_token()
+        if token and token['tipo'] == tipo and (valor is None or token['valor'] == valor):
+            self.advance()
+            return token
         else:
-            self.errors.append(ParserError(message, -1, -1))
-            
+            expected = f"{tipo}" + (f"('{valor}')" if valor else "")
+            found = token['tipo'] if token else 'EOF'
+            self.errors.append({
+                'mensagem': f"Esperado {expected}, mas encontrado {found}",
+                'linha': token['linha'] if token else 'EOF',
+                'coluna': token['coluna'] if token else 'EOF'
+            })
+            return None
+
     def parse(self):
-        ast = self.parse_program()
-        if self.current_token is not None:
-            self.log_error("Unexpected token at end of program")
-        return ast, self.errors
-        
-    def parse_program(self):
-        functions = []
-        while self.current_token is not None:
-            if self.current_token['tipo'] == 'PALAVRA_CHAVE' and self.current_token['valor'] in ['int', 'float', 'void']:
-                func = self.parse_function()
-                if func:
-                    functions.append(func)
+        nodes = []
+        while self.current_token() is not None:
+            node = self.parse_function() or self.parse_statement()
+            if node:
+                nodes.append(node)
             else:
-                self.log_error(f"Unexpected token {self.current_token['valor']} at global scope")
                 self.advance()
-                
-        return ASTNode('Program', children=functions)
-        
-    def parse_function(self):
-        # Parse return type
-        if not self.current_token or self.current_token['tipo'] != 'PALAVRA_CHAVE':
-            self.log_error("Expected return type for function")
-            return None
-            
-        return_type = self.current_token['valor']
-        self.advance()
-        
-        # Parse function name
-        if not self.current_token or self.current_token['tipo'] != 'IDENTIFICADOR':
-            self.log_error("Expected function name")
-            return None
-            
-        func_name = self.current_token['valor']
-        self.advance()
-        
-        # Parse parameters
-        if not self.expect('SEPARADOR', '(', "Expected '(' after function name"):
-            return None
-            
-        params = []
-        # Simplified parameter parsing - just types and names
-        while self.current_token and self.current_token['tipo'] != 'SEPARADOR' or self.current_token['valor'] != ')':
-            if self.current_token['tipo'] == 'PALAVRA_CHAVE':
-                param_type = self.current_token['valor']
-                self.advance()
-                if self.current_token and self.current_token['tipo'] == 'IDENTIFICADOR':
-                    param_name = self.current_token['valor']
-                    self.advance()
-                    params.append(ASTNode('Parameter', children=[
-                        ASTNode('Type', param_type),
-                        ASTNode('Identifier', param_name)
-                    ]))
-                else:
-                    self.log_error("Expected parameter name")
-            elif self.current_token['tipo'] == 'SEPARADOR' and self.current_token['valor'] == ',':
-                self.advance()
-            else:
-                self.log_error("Unexpected token in parameter list")
-                self.advance()
-                
-        if not self.expect('SEPARADOR', ')', "Expected ')' after parameters"):
-            return None
-            
-        # Parse function body
-        if not self.expect('SEPARADOR', '{', "Expected '{' before function body"):
-            return None
-            
-        body = []
-        while self.current_token and (self.current_token['tipo'] != 'SEPARADOR' or self.current_token['valor'] != '}'):
-            stmt = self.parse_statement()
-            if stmt:
-                body.append(stmt)
-                
-        if not self.expect('SEPARADOR', '}', "Expected '}' after function body"):
-            return None
-            
-        return ASTNode('Function', func_name, children=[
-            ASTNode('ReturnType', return_type),
-            ASTNode('Parameters', children=params),
-            ASTNode('Body', children=body)
-        ])
-        
+        return Node('Program', nodes), self.errors
+
     def parse_statement(self):
-        if not self.current_token:
+        token = self.current_token()
+        if token is None:
             return None
+
+        if token['tipo'] == 'COMENTARIO':
+            return self.parse_comment()
             
-        # Variable declaration
-        if self.current_token['tipo'] == 'PALAVRA_CHAVE' and self.current_token['valor'] in ['int', 'float', 'char']:
-            return self.parse_declaration()
-        # If statement
-        elif self.current_token['tipo'] == 'PALAVRA_CHAVE' and self.current_token['valor'] == 'if':
-            return self.parse_if_statement()
-        # Return statement
-        elif self.current_token['tipo'] == 'PALAVRA_CHAVE' and self.current_token['valor'] == 'return':
-            return self.parse_return_statement()
-        # Block statement
-        elif self.current_token['tipo'] == 'SEPARADOR' and self.current_token['valor'] == '{':
+        if token['tipo'] == 'PALAVRA_CHAVE':
+            if token['valor'] in {'int', 'float', 'char', 'double', 'long', 'short', 'unsigned'}:
+                return self.parse_declaration()
+            elif token['valor'] == 'if':
+                return self.parse_if_statement()
+            elif token['valor'] == 'while':
+                return self.parse_while_loop()
+            elif token['valor'] == 'for':
+                return self.parse_for_loop()
+            elif token['valor'] == 'return':
+                return self.parse_return_statement()
+            elif token['valor'] == 'do':
+                return self.parse_do_while_loop()
+        elif token['tipo'] == 'IDENTIFICADOR':
+            next_token = self.tokens[self.position + 1] if self.position + 1 < len(self.tokens) else None
+            if next_token and next_token['valor'] == '(':
+                return self.parse_function_call()
+            else:
+                return self.parse_assignment_or_expression()
+        elif token['valor'] == '{':
             return self.parse_block()
-        # Expression statement (assignment, etc.)
-        elif self.current_token['tipo'] == 'IDENTIFICADOR':
-            return self.parse_expression_statement()
-        else:
-            self.log_error(f"Unexpected token {self.current_token['valor']} in statement")
+        elif token['valor'] == ';':
             self.advance()
-            return None
-            
-    def parse_declaration(self):
-        type_token = self.current_token
-        self.advance()
-        
-        if not self.current_token or self.current_token['tipo'] != 'IDENTIFICADOR':
-            self.log_error("Expected variable name in declaration")
-            return None
-            
-        var_name = self.current_token['valor']
-        self.advance()
-        
-        # Handle initialization
-        if self.current_token and self.current_token['tipo'] == 'OPERADOR' and self.current_token['valor'] == '=':
-            self.advance()  # consume '='
-            init_expr = self.parse_expression()
-            if not init_expr:
-                self.log_error("Expected expression after '=' in initialization")
-                return None
+            return Node('EmptyStatement')
         else:
-            init_expr = ASTNode('NoInit')
-            
-        if not self.expect('SEPARADOR', ';', "Expected ';' after declaration"):
+            self.errors.append({
+                'mensagem': f"Declaração ou comando inválido: '{token['valor']}'",
+                'linha': token['linha'],
+                'coluna': token['coluna']
+            })
             return None
-            
-        return ASTNode('Declaration', children=[
-            ASTNode('Type', type_token['valor']),
-            ASTNode('Identifier', var_name),
-            init_expr
-        ])
-        
-    def parse_if_statement(self):
-        if not self.expect('PALAVRA_CHAVE', 'if', "Expected 'if'"):
-            return None
-            
-        if not self.expect('SEPARADOR', '(', "Expected '(' after 'if'"):
-            return None
-            
-        condition = self.parse_expression()
-        
-        if not self.expect('SEPARADOR', ')', "Expected ')' after if condition"):
-            return None
-            
-        then_branch = self.parse_statement()
-        
-        # Optional else branch
-        else_branch = None
-        if self.current_token and self.current_token['tipo'] == 'PALAVRA_CHAVE' and self.current_token['valor'] == 'else':
-            self.advance()
-            else_branch = self.parse_statement()
-            
-        return ASTNode('IfStatement', children=[
-            condition,
-            then_branch,
-            else_branch or ASTNode('NoElse')
-        ])
-        
-    def parse_return_statement(self):
-        if not self.expect('PALAVRA_CHAVE', 'return', "Expected 'return'"):
-            return None
-            
-        expr = self.parse_expression()
-        
-        if not self.expect('SEPARADOR', ';', "Expected ';' after return"):
-            return None
-            
-        return ASTNode('ReturnStatement', children=[expr])
-        
+
     def parse_block(self):
-        if not self.expect('SEPARADOR', '{', "Expected '{' for block"):
-            return None
-            
+        self.expect('SEPARADOR', '{')
         statements = []
-        while self.current_token and (self.current_token['tipo'] != 'SEPARADOR' or self.current_token['valor'] != '}'):
+        while self.current_token() and self.current_token()['valor'] != '}':
             stmt = self.parse_statement()
             if stmt:
                 statements.append(stmt)
-                
-        if not self.expect('SEPARADOR', '}', "Expected '}' after block"):
+        self.expect('SEPARADOR', '}')
+        return Node('Block', statements)
+
+    def parse_function(self):
+        token = self.current_token()
+        if token is None or token['tipo'] != 'PALAVRA_CHAVE' or token['valor'] not in {
+            'int', 'float', 'char', 'double', 'long', 'short', 'unsigned', 'void'
+        }:
             return None
-            
-        return ASTNode('Block', children=statements)
+
+        return_type = self.expect('PALAVRA_CHAVE')
+        func_name = self.expect('IDENTIFICADOR')
+        self.expect('SEPARADOR', '(')
         
-    def parse_expression_statement(self):
-        expr = self.parse_expression()
+        parameters = []
+        while self.current_token() and self.current_token()['valor'] != ')':
+            param_type = self.expect('PALAVRA_CHAVE')
+            param_name = self.expect('IDENTIFICADOR')
+            parameters.append(Node('Parameter', [
+                Node('Type', value=param_type['valor']),
+                Node('Identifier', value=param_name['valor'])
+            ]))
+            if self.current_token() and self.current_token()['valor'] == ',':
+                self.expect('SEPARADOR', ',')
         
-        if not self.expect('SEPARADOR', ';', "Expected ';' after expression"):
-            return None
-            
-        return ASTNode('ExpressionStatement', children=[expr])
+        self.expect('SEPARADOR', ')')
         
+        body = self.parse_block()
+        
+        return Node('Function', [
+            Node('ReturnType', value=return_type['valor']),
+            Node('FunctionName', value=func_name['valor']),
+            Node('Parameters', parameters),
+            body
+        ])
+
+    def parse_pointer_type(self):
+        base_type = self.expect('PALAVRA_CHAVE')
+        pointers = []
+        
+        while self.current_token() and self.current_token()['valor'] == '*':
+            pointers.append(self.expect('OPERADOR', '*'))
+        
+        return base_type, pointers
+
+    def parse_declaration(self):
+        base_type, pointers = self.parse_pointer_type()
+        id_token = self.expect('IDENTIFICADOR')
+
+        array_sizes = []
+        while self.current_token() and self.current_token()['valor'] == '[':
+            self.expect('SEPARADOR', '[')
+            size_token = self.expect('NUMERO') if self.current_token() and self.current_token()['tipo'] == 'NUMERO' else None
+            self.expect('SEPARADOR', ']')
+            array_sizes.append(Node('ArraySize', value=size_token['valor'] if size_token else None))
+        
+        init_expr = None
+        if self.current_token() and self.current_token()['valor'] == '=':
+            self.expect('OPERADOR', '=')
+            init_expr = self.parse_expression()
+        
+        self.expect('SEPARADOR', ';')
+
+        declaration = Node('Declaration', [
+            Node('Type', value=base_type['valor']),
+            *[Node('Pointer') for _ in pointers],
+            Node('Identifier', value=id_token['valor'])
+        ])
+        if array_sizes:
+            declaration.children.append(Node('ArrayDimensions', array_sizes))
+        if init_expr:
+            declaration.children.append(Node('Initialization', [init_expr]))
+        
+        return declaration
+
+    def parse_assignment_or_expression(self):
+        left = self.parse_expression()
+        
+        token = self.current_token()
+        if token and token['tipo'] == 'OPERADOR' and token['valor'] in {
+            '=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>='
+        }:
+            op_token = self.expect('OPERADOR')
+            right = self.parse_expression()
+            self.expect('SEPARADOR', ';')
+            return Node('Assignment', [
+                left,
+                Node('Operator', value=op_token['valor']),
+                right
+            ])
+        else:
+            self.expect('SEPARADOR', ';')
+            return left
+
+    
     def parse_expression(self):
-        # Handle simple expressions: identifiers, numbers, and assignments
-        if not self.current_token:
-            self.log_error("Unexpected end of input in expression")
-            return None
+        return self.parse_ternary_expression()
+
+    def parse_ternary_expression(self):
+        condition = self.parse_logical_or_expression()
+        
+        if self.current_token() and self.current_token()['valor'] == '?':
+            self.expect('OPERADOR', '?')
+            true_expr = self.parse_expression()
+            self.expect('OPERADOR', ':')
+            false_expr = self.parse_ternary_expression()
             
-        # Handle numeric literals
-        if self.current_token['tipo'] == 'NUMERO':
-            node = ASTNode('Literal', self.current_token['valor'])
-            self.advance()
-            return node
+            return Node('TernaryOperation', [
+                condition,
+                true_expr,
+                false_expr
+            ])
+        
+        return condition
+
+    def parse_logical_or_expression(self):
+        left = self.parse_logical_and_expression()
+        
+        while self.current_token() and self.current_token()['valor'] == '||':
+            op_token = self.expect('OPERADOR')
+            right = self.parse_logical_and_expression()
+            left = Node('LogicalOrOperation', [
+                left,
+                Node('Operator', value=op_token['valor']),
+                right
+            ])
             
-        # Handle identifiers and assignments
-        if self.current_token['tipo'] == 'IDENTIFICADOR':
-            left = ASTNode('Identifier', self.current_token['valor'])
-            self.advance()
+        return left
+
+    def parse_logical_and_expression(self):
+        left = self.parse_bitwise_or_expression()
+        
+        while self.current_token() and self.current_token()['valor'] == '&&':
+            op_token = self.expect('OPERADOR')
+            right = self.parse_bitwise_or_expression()
+            left = Node('LogicalAndOperation', [
+                left,
+                Node('Operator', value=op_token['valor']),
+                right
+            ])
             
-            # Check for assignment
-            if self.current_token and self.current_token['tipo'] == 'OPERADOR' and self.current_token['valor'] == '=':
-                op = self.current_token['valor']
-                self.advance()
-                right = self.parse_expression()
-                return ASTNode('Assignment', op, children=[left, right])
-            else:
-                return left
+        return left
+
+    def parse_bitwise_or_expression(self):
+        left = self.parse_bitwise_xor_expression()
+        
+        while self.current_token() and self.current_token()['valor'] == '|':
+            next_token = self.tokens[self.position + 1] if self.position + 1 < len(self.tokens) else None
+            if next_token and next_token['valor'] == '|':
+                break
                 
-        self.log_error("Unexpected token in expression")
+            op_token = self.expect('OPERADOR')
+            right = self.parse_bitwise_xor_expression()
+            left = Node('BitwiseOrOperation', [
+                left,
+                Node('Operator', value=op_token['valor']),
+                right
+            ])
+            
+        return left
+
+    def parse_bitwise_xor_expression(self):
+        left = self.parse_bitwise_and_expression()
+        
+        while self.current_token() and self.current_token()['valor'] == '^':
+            op_token = self.expect('OPERADOR')
+            right = self.parse_bitwise_and_expression()
+            left = Node('BitwiseXorOperation', [
+                left,
+                Node('Operator', value=op_token['valor']),
+                right
+            ])
+            
+        return left
+
+    def parse_bitwise_and_expression(self):
+        left = self.parse_equality_expression()
+        
+        while self.current_token() and self.current_token()['valor'] == '&':
+            next_token = self.tokens[self.position + 1] if self.position + 1 < len(self.tokens) else None
+            if next_token and next_token['valor'] == '&':
+                break
+                
+            op_token = self.expect('OPERADOR')
+            right = self.parse_equality_expression()
+            left = Node('BitwiseAndOperation', [
+                left,
+                Node('Operator', value=op_token['valor']),
+                right
+            ])
+            
+        return left
+
+    def parse_equality_expression(self):
+        left = self.parse_relational_expression()
+        
+        while self.current_token() and self.current_token()['valor'] in {'==', '!='}:
+            op_token = self.expect('OPERADOR')
+            right = self.parse_relational_expression()
+            left = Node('BinaryOperation', [
+                left,
+                Node('Operator', value=op_token['valor']),
+                right
+            ])
+            
+        return left
+
+    def parse_relational_expression(self):
+        left = self.parse_additive_expression()
+        
+        while self.current_token() and self.current_token()['valor'] in {'<', '>', '<=', '>='}:
+            op_token = self.expect('OPERADOR')
+            right = self.parse_additive_expression()
+            left = Node('BinaryOperation', [
+                left,
+                Node('Operator', value=op_token['valor']),
+                right
+            ])
+            
+        return left
+
+    def parse_additive_expression(self):
+        left = self.parse_multiplicative_expression()
+        
+        while self.current_token() and self.current_token()['valor'] in {'+', '-'}:
+            op_token = self.expect('OPERADOR')
+            right = self.parse_multiplicative_expression()
+            left = Node('BinaryOperation', [
+                left,
+                Node('Operator', value=op_token['valor']),
+                right
+            ])
+            
+        return left
+    
+    def parse_increment_decrement(self):
+        token = self.current_token()
+        if token is None or token['tipo'] != 'OPERADOR' or token['valor'] not in {'++', '--'}:
+            return None
+        
+        next_token = self.tokens[self.position + 1] if self.position + 1 < len(self.tokens) else None
+        prev_token = self.tokens[self.position - 1] if self.position > 0 else None
+        
+        if (next_token and next_token['tipo'] == 'IDENTIFICADOR') or \
+        (next_token and next_token['valor'] == '(' and self.position + 2 < len(self.tokens) and \
+        self.tokens[self.position + 2]['tipo'] == 'IDENTIFICADOR'):
+            op_token = self.expect('OPERADOR')
+            operand = self.parse_primary_expression()
+            return Node('PrefixIncrementDecrement', [
+                Node('Operator', value=op_token['valor']),
+                operand
+            ])
+        elif prev_token and prev_token['tipo'] == 'IDENTIFICADOR':
+            operand = Node('Identifier', value=prev_token['valor'])
+            self.position -= 1 
+            operand = self.parse_primary_expression() 
+            op_token = self.expect('OPERADOR')
+            return Node('PostfixIncrementDecrement', [
+                operand,
+                Node('Operator', value=op_token['valor'])
+            ])
+        else:
+            self.errors.append({
+                'mensagem': f"Operador de incremento/decremento mal posicionado: '{token['valor']}'",
+                'linha': token['linha'],
+                'coluna': token['coluna']
+            })
+            self.advance()
+            return Node('Expression', value='ERROR')
+
+    def parse_multiplicative_expression(self):
+        left = self.parse_unary_expression()
+        
+        while self.current_token() and self.current_token()['valor'] in {'*', '/', '%'}:
+            op_token = self.expect('OPERADOR')
+            right = self.parse_unary_expression()
+            left = Node('BinaryOperation', [
+                left,
+                Node('Operator', value=op_token['valor']),
+                right
+            ])
+            
+        return left
+
+    def parse_unary_expression(self):
+        token = self.current_token()
+        if token and token['tipo'] == 'OPERADOR':
+            if token['valor'] in {'*', '&'}:
+                op_token = self.expect('OPERADOR')
+                operand = self.parse_unary_expression()
+                return Node('UnaryOperation', [
+                    Node('Operator', value=op_token['valor']),
+                    operand
+                ])
+            elif token['valor'] in {'++', '--'}:
+                return self.parse_increment_decrement()
+            elif token['valor'] in {'+', '-', '!', '~'}:
+                op_token = self.expect('OPERADOR')
+                operand = self.parse_unary_expression()
+                return Node('UnaryOperation', [
+                    Node('Operator', value=op_token['valor']),
+                    operand
+                ])
+        if token and token['valor'] == '(':
+            self.expect('SEPARADOR', '(')
+            expr = self.parse_expression()
+            self.expect('SEPARADOR', ')')
+            return expr
+        
+        return self.parse_primary_expression()
+
+    def parse_primary_expression(self):
+        token = self.current_token()
+        if token is None:
+            self.errors.append({
+                'mensagem': "Expressão esperada mas não encontrada",
+                'linha': 'EOF',
+                'coluna': 'EOF'
+            })
+            return Node('Expression', value='ERROR')
+
+        if token['tipo'] == 'NUMERO':
+            self.advance()
+            return Node('Number', value=token['valor'])
+        elif token['tipo'] == 'IDENTIFICADOR':
+            next_token = self.tokens[self.position + 1] if self.position + 1 < len(self.tokens) else None
+            if next_token and next_token['valor'] == '(':
+                return self.parse_function_call()
+            else:
+                if next_token and next_token['valor'] in {'++', '--'}:
+                    ident = self.expect('IDENTIFICADOR')
+                    op = self.expect('OPERADOR')
+                    return Node('PostfixIncrementDecrement', [
+                        Node('Identifier', value=ident['valor']),
+                        Node('Operator', value=op['valor'])
+                    ])
+                else:
+                    self.advance()
+                    return Node('Identifier', value=token['valor'])
+        elif token['tipo'] == 'TEXTO':
+            self.advance()
+            return Node('String', value=token['valor'])
+        else:
+            self.errors.append({
+                'mensagem': f"Expressão inválida iniciando com '{token['valor']}'",
+                'linha': token['linha'],
+                'coluna': token['coluna']
+            })
+            self.advance()
+            return Node('Expression', value='ERROR')
+
+    def parse_function_call(self):
+        func_name = self.expect('IDENTIFICADOR')
+        self.expect('SEPARADOR', '(')
+        
+        arguments = []
+        while self.current_token() and self.current_token()['valor'] != ')':
+            arg = self.parse_expression()
+            arguments.append(arg)
+            if self.current_token() and self.current_token()['valor'] == ',':
+                self.expect('SEPARADOR', ',')
+        
+        self.expect('SEPARADOR', ')')
+        
+        return Node('FunctionCall', [
+            Node('FunctionName', value=func_name['valor']),
+            Node('Arguments', arguments)
+        ])
+
+    def parse_if_statement(self):
+        self.expect('PALAVRA_CHAVE', 'if')
+        self.expect('SEPARADOR', '(')
+        condition = self.parse_expression()
+        self.expect('SEPARADOR', ')')
+        
+        then_branch = self.parse_statement()
+        
+        else_branch = None
+        if self.current_token() and self.current_token()['valor'] == 'else':
+            self.expect('PALAVRA_CHAVE', 'else')
+            else_branch = self.parse_statement()
+            
+        return Node('IfStatement', [
+            condition,
+            then_branch,
+            else_branch if else_branch else Node('EmptyElse')
+        ])
+
+    def parse_while_loop(self):
+        self.expect('PALAVRA_CHAVE', 'while')
+        self.expect('SEPARADOR', '(')
+        condition = self.parse_expression()
+        self.expect('SEPARADOR', ')')
+        
+        body = self.parse_statement()
+        
+        return Node('WhileLoop', [
+            condition,
+            body
+        ])
+
+    def parse_do_while_loop(self):
+        self.expect('PALAVRA_CHAVE', 'do')
+        body = self.parse_statement()
+        self.expect('PALAVRA_CHAVE', 'while')
+        self.expect('SEPARADOR', '(')
+        condition = self.parse_expression()
+        self.expect('SEPARADOR', ')')
+        self.expect('SEPARADOR', ';')
+        
+        return Node('DoWhileLoop', [
+            body,
+            condition
+        ])
+
+    def parse_for_loop(self):
+        self.expect('PALAVRA_CHAVE', 'for')
+        self.expect('SEPARADOR', '(')
+
+        init = None
+        if self.current_token() and self.current_token()['valor'] != ';':
+            if self.current_token()['tipo'] == 'PALAVRA_CHAVE' and self.current_token()['valor'] in {
+                'int', 'float', 'char', 'double', 'long', 'short', 'unsigned'
+            }:
+                init = self.parse_declaration()
+            else:
+                init = self.parse_assignment_or_expression()
+                if self.current_token() and self.current_token()['valor'] == ';':
+                    self.expect('SEPARADOR', ';')
+        else:
+            self.expect('SEPARADOR', ';')
+
+        condition = None
+        if self.current_token() and self.current_token()['valor'] != ';':
+            condition = self.parse_expression()
+        self.expect('SEPARADOR', ';')
+
+        increment = None
+        if self.current_token() and self.current_token()['valor'] != ')':
+            increment = self.parse_expression()
+        self.expect('SEPARADOR', ')')
+        
+        body = self.parse_statement()
+        
+        return Node('ForLoop', [
+            init if init else Node('EmptyForInit'),
+            condition if condition else Node('EmptyForCondition'),
+            increment if increment else Node('EmptyForIncrement'),
+            body
+        ])
+
+    def parse_return_statement(self):
+        self.expect('PALAVRA_CHAVE', 'return')
+        expr = None
+        if self.current_token() and self.current_token()['valor'] != ';':
+            expr = self.parse_expression()
+        self.expect('SEPARADOR', ';')
+        
+        return Node('ReturnStatement', [expr] if expr else [])
+    
+    def parse_comment(self):
+        token = self.current_token()
+        if token and token['tipo'] == 'COMENTARIO':
+            self.advance()
+            return Node('Comment', value=token['valor'])
         return None
