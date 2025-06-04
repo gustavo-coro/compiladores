@@ -48,7 +48,7 @@ class Parser:
                 nodes.append(node)
             else:
                 self.advance()
-        return Node('Program', nodes), self.errors
+        return Node('Programa', nodes), self.errors
 
     def parse_statement(self):
         token = self.current_token()
@@ -81,7 +81,7 @@ class Parser:
             return self.parse_block()
         elif token['valor'] == ';':
             self.advance()
-            return Node('EmptyStatement')
+            return Node('Declaração Vazia')
         else:
             self.errors.append({
                 'mensagem': f"Declaração ou comando inválido: '{token['valor']}'",
@@ -98,7 +98,7 @@ class Parser:
             if stmt:
                 statements.append(stmt)
         self.expect('SEPARADOR', '}')
-        return Node('Block', statements)
+        return Node('Bloco', statements)
 
     def parse_function(self):
         token = self.current_token()
@@ -115,9 +115,9 @@ class Parser:
         while self.current_token() and self.current_token()['valor'] != ')':
             param_type = self.expect('PALAVRA_CHAVE')
             param_name = self.expect('IDENTIFICADOR')
-            parameters.append(Node('Parameter', [
-                Node('Type', value=param_type['valor']),
-                Node('Identifier', value=param_name['valor'])
+            parameters.append(Node('Parâmetro', [
+                Node('Tipo', value=param_type['valor']),
+                Node('Identificador', value=param_name['valor'])
             ]))
             if self.current_token() and self.current_token()['valor'] == ',':
                 self.expect('SEPARADOR', ',')
@@ -126,10 +126,10 @@ class Parser:
         
         body = self.parse_block()
         
-        return Node('Function', [
-            Node('ReturnType', value=return_type['valor']),
-            Node('FunctionName', value=func_name['valor']),
-            Node('Parameters', parameters),
+        return Node('Função', [
+            Node('Tipo de Retorno', value=return_type['valor']),
+            Node('Nome da Função', value=func_name['valor']),
+            Node('Parâmetro', parameters),
             body
         ])
 
@@ -151,7 +151,7 @@ class Parser:
             self.expect('SEPARADOR', '[')
             size_token = self.expect('NUMERO') if self.current_token() and self.current_token()['tipo'] == 'NUMERO' else None
             self.expect('SEPARADOR', ']')
-            array_sizes.append(Node('ArraySize', value=size_token['valor'] if size_token else None))
+            array_sizes.append(Node('Tamanho do Array', value=size_token['valor'] if size_token else None))
         
         init_expr = None
         if self.current_token() and self.current_token()['valor'] == '=':
@@ -160,15 +160,15 @@ class Parser:
         
         self.expect('SEPARADOR', ';')
 
-        declaration = Node('Declaration', [
-            Node('Type', value=base_type['valor']),
-            *[Node('Pointer') for _ in pointers],
-            Node('Identifier', value=id_token['valor'])
+        declaration = Node('Declaração', [
+            Node('Tipo', value=base_type['valor']),
+            *[Node('Ponteiro') for _ in pointers],
+            Node('Identificador', value=id_token['valor'])
         ])
         if array_sizes:
-            declaration.children.append(Node('ArrayDimensions', array_sizes))
+            declaration.children.append(Node('Dimensão do Array', array_sizes))
         if init_expr:
-            declaration.children.append(Node('Initialization', [init_expr]))
+            declaration.children.append(Node('Inicialização', [init_expr]))
         
         return declaration
 
@@ -182,9 +182,9 @@ class Parser:
             op_token = self.expect('OPERADOR')
             right = self.parse_expression()
             self.expect('SEPARADOR', ';')
-            return Node('Assignment', [
+            return Node('Atribuição', [
                 left,
-                Node('Operator', value=op_token['valor']),
+                Node('Operador', value=op_token['valor']),
                 right
             ])
         else:
@@ -204,7 +204,7 @@ class Parser:
             self.expect('OPERADOR', ':')
             false_expr = self.parse_ternary_expression()
             
-            return Node('TernaryOperation', [
+            return Node('Operação Ternária', [
                 condition,
                 true_expr,
                 false_expr
@@ -218,9 +218,9 @@ class Parser:
         while self.current_token() and self.current_token()['valor'] == '||':
             op_token = self.expect('OPERADOR')
             right = self.parse_logical_and_expression()
-            left = Node('LogicalOrOperation', [
+            left = Node('Operação OR Lógico', [
                 left,
-                Node('Operator', value=op_token['valor']),
+                Node('Operador', value=op_token['valor']),
                 right
             ])
             
@@ -232,9 +232,9 @@ class Parser:
         while self.current_token() and self.current_token()['valor'] == '&&':
             op_token = self.expect('OPERADOR')
             right = self.parse_bitwise_or_expression()
-            left = Node('LogicalAndOperation', [
+            left = Node('Operação AND Lógico', [
                 left,
-                Node('Operator', value=op_token['valor']),
+                Node('Operador', value=op_token['valor']),
                 right
             ])
             
@@ -250,9 +250,9 @@ class Parser:
                 
             op_token = self.expect('OPERADOR')
             right = self.parse_bitwise_xor_expression()
-            left = Node('BitwiseOrOperation', [
+            left = Node('Operador Bitwise Or', [
                 left,
-                Node('Operator', value=op_token['valor']),
+                Node('Operador', value=op_token['valor']),
                 right
             ])
             
@@ -264,9 +264,9 @@ class Parser:
         while self.current_token() and self.current_token()['valor'] == '^':
             op_token = self.expect('OPERADOR')
             right = self.parse_bitwise_and_expression()
-            left = Node('BitwiseXorOperation', [
+            left = Node('Operador Bitwise Xor', [
                 left,
-                Node('Operator', value=op_token['valor']),
+                Node('Operador', value=op_token['valor']),
                 right
             ])
             
@@ -282,9 +282,9 @@ class Parser:
                 
             op_token = self.expect('OPERADOR')
             right = self.parse_equality_expression()
-            left = Node('BitwiseAndOperation', [
+            left = Node('Operador Bitwise And', [
                 left,
-                Node('Operator', value=op_token['valor']),
+                Node('Operador', value=op_token['valor']),
                 right
             ])
             
@@ -296,9 +296,9 @@ class Parser:
         while self.current_token() and self.current_token()['valor'] in {'==', '!='}:
             op_token = self.expect('OPERADOR')
             right = self.parse_relational_expression()
-            left = Node('BinaryOperation', [
+            left = Node('Operação Binária', [
                 left,
-                Node('Operator', value=op_token['valor']),
+                Node('Operador', value=op_token['valor']),
                 right
             ])
             
@@ -310,9 +310,9 @@ class Parser:
         while self.current_token() and self.current_token()['valor'] in {'<', '>', '<=', '>='}:
             op_token = self.expect('OPERADOR')
             right = self.parse_additive_expression()
-            left = Node('BinaryOperation', [
+            left = Node('Operação Binária', [
                 left,
-                Node('Operator', value=op_token['valor']),
+                Node('Operador', value=op_token['valor']),
                 right
             ])
             
@@ -324,9 +324,9 @@ class Parser:
         while self.current_token() and self.current_token()['valor'] in {'+', '-'}:
             op_token = self.expect('OPERADOR')
             right = self.parse_multiplicative_expression()
-            left = Node('BinaryOperation', [
+            left = Node('Operação Binária', [
                 left,
-                Node('Operator', value=op_token['valor']),
+                Node('Operador', value=op_token['valor']),
                 right
             ])
             
@@ -345,8 +345,8 @@ class Parser:
         self.tokens[self.position + 2]['tipo'] == 'IDENTIFICADOR'):
             op_token = self.expect('OPERADOR')
             operand = self.parse_primary_expression()
-            return Node('PrefixIncrementDecrement', [
-                Node('Operator', value=op_token['valor']),
+            return Node('Incremento Decremento Prefixo', [
+                Node('Operador', value=op_token['valor']),
                 operand
             ])
         elif prev_token and prev_token['tipo'] == 'IDENTIFICADOR':
@@ -354,9 +354,9 @@ class Parser:
             self.position -= 1 
             operand = self.parse_primary_expression() 
             op_token = self.expect('OPERADOR')
-            return Node('PostfixIncrementDecrement', [
+            return Node('Incremento Decremento Posfixo', [
                 operand,
-                Node('Operator', value=op_token['valor'])
+                Node('Operador', value=op_token['valor'])
             ])
         else:
             self.errors.append({
@@ -365,7 +365,7 @@ class Parser:
                 'coluna': token['coluna']
             })
             self.advance()
-            return Node('Expression', value='ERROR')
+            return Node('Expressão', value='ERROR')
 
     def parse_multiplicative_expression(self):
         left = self.parse_unary_expression()
@@ -373,9 +373,9 @@ class Parser:
         while self.current_token() and self.current_token()['valor'] in {'*', '/', '%'}:
             op_token = self.expect('OPERADOR')
             right = self.parse_unary_expression()
-            left = Node('BinaryOperation', [
+            left = Node('Operação Binária', [
                 left,
-                Node('Operator', value=op_token['valor']),
+                Node('Operador', value=op_token['valor']),
                 right
             ])
             
@@ -387,8 +387,8 @@ class Parser:
             if token['valor'] in {'*', '&'}:
                 op_token = self.expect('OPERADOR')
                 operand = self.parse_unary_expression()
-                return Node('UnaryOperation', [
-                    Node('Operator', value=op_token['valor']),
+                return Node('Operação Unária', [
+                    Node('Operador', value=op_token['valor']),
                     operand
                 ])
             elif token['valor'] in {'++', '--'}:
@@ -396,8 +396,8 @@ class Parser:
             elif token['valor'] in {'+', '-', '!', '~'}:
                 op_token = self.expect('OPERADOR')
                 operand = self.parse_unary_expression()
-                return Node('UnaryOperation', [
-                    Node('Operator', value=op_token['valor']),
+                return Node('Operação Unária', [
+                    Node('Operador', value=op_token['valor']),
                     operand
                 ])
         if token and token['valor'] == '(':
@@ -416,11 +416,11 @@ class Parser:
                 'linha': 'EOF',
                 'coluna': 'EOF'
             })
-            return Node('Expression', value='ERROR')
+            return Node('Expressão', value='ERROR')
 
         if token['tipo'] == 'NUMERO':
             self.advance()
-            return Node('Number', value=token['valor'])
+            return Node('Número', value=token['valor'])
         elif token['tipo'] == 'IDENTIFICADOR':
             next_token = self.tokens[self.position + 1] if self.position + 1 < len(self.tokens) else None
             if next_token and next_token['valor'] == '(':
@@ -429,13 +429,13 @@ class Parser:
                 if next_token and next_token['valor'] in {'++', '--'}:
                     ident = self.expect('IDENTIFICADOR')
                     op = self.expect('OPERADOR')
-                    return Node('PostfixIncrementDecrement', [
-                        Node('Identifier', value=ident['valor']),
-                        Node('Operator', value=op['valor'])
+                    return Node('Incremento Decremento Posfixo', [
+                        Node('Identificador', value=ident['valor']),
+                        Node('Operador', value=op['valor'])
                     ])
                 else:
                     self.advance()
-                    return Node('Identifier', value=token['valor'])
+                    return Node('Identificador', value=token['valor'])
         elif token['tipo'] == 'TEXTO':
             self.advance()
             return Node('String', value=token['valor'])
@@ -446,7 +446,7 @@ class Parser:
                 'coluna': token['coluna']
             })
             self.advance()
-            return Node('Expression', value='ERROR')
+            return Node('Expressão', value='ERROR')
 
     def parse_function_call(self):
         func_name = self.expect('IDENTIFICADOR')
@@ -461,9 +461,9 @@ class Parser:
         
         self.expect('SEPARADOR', ')')
         
-        return Node('FunctionCall', [
-            Node('FunctionName', value=func_name['valor']),
-            Node('Arguments', arguments)
+        return Node('Chamada de Função', [
+            Node('Nome da Função', value=func_name['valor']),
+            Node('Argumentos', arguments)
         ])
 
     def parse_if_statement(self):
@@ -479,10 +479,10 @@ class Parser:
             self.expect('PALAVRA_CHAVE', 'else')
             else_branch = self.parse_statement()
             
-        return Node('IfStatement', [
+        return Node('Declaração if', [
             condition,
             then_branch,
-            else_branch if else_branch else Node('EmptyElse')
+            else_branch if else_branch else Node('Else vazio')
         ])
 
     def parse_while_loop(self):
@@ -542,9 +542,9 @@ class Parser:
         body = self.parse_statement()
         
         return Node('ForLoop', [
-            init if init else Node('EmptyForInit'),
-            condition if condition else Node('EmptyForCondition'),
-            increment if increment else Node('EmptyForIncrement'),
+            init if init else Node('Inicialização for vazia'),
+            condition if condition else Node('Condição for vazia'),
+            increment if increment else Node('Incremento for vazio'),
             body
         ])
 
@@ -555,11 +555,11 @@ class Parser:
             expr = self.parse_expression()
         self.expect('SEPARADOR', ';')
         
-        return Node('ReturnStatement', [expr] if expr else [])
+        return Node('Declaração Return', [expr] if expr else [])
     
     def parse_comment(self):
         token = self.current_token()
         if token and token['tipo'] == 'COMENTARIO':
             self.advance()
-            return Node('Comment', value=token['valor'])
+            return Node('Comentário', value=token['valor'])
         return None
